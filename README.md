@@ -17,11 +17,14 @@ pip install -r requirements.txt
 
 2.Please use the following commands to run the code in a distributed mode, and you can freely choose the number of GPUs you use. Eg, you're using your 0,1 gpu, so "CUDA_VISIBLE_DEVICES=0,1", and "--nproc_per_node=2":
 
-For MNIST, -d should be 0: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 0
+For MNIST, -d should be 0: 
+CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 0
 
-For CIFAR10, -d should be 1: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 1
+For CIFAR10, -d should be 1: 
+CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 1
 
-For CIFAR100, -d should be 0: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 2
+For CIFAR100, -d should be 2: 
+CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 2
 
 
 ------------------------------------------------------
@@ -30,7 +33,7 @@ For CIFAR100, -d should be 0: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c
 
 DEFAULT:
 
-  dataset: mnist 		#(you don't need to change)
+  dataset: mnist 		#(you don't need to change)  
   
   ckpt: 			#(os dirpath. path for model checkpoint)
   
