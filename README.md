@@ -28,36 +28,62 @@ For CIFAR100, -d should be 0: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c
 
 3.All the running options are placed in the yaml file in the networks folder, and I will choose an example below. Eg for MNIST:<br>
 
-DEFAULT:<br>
-  dataset: mnist 		#(you don't need to change)<br>
-  ckpt: 			#(os dirpath. path for model checkpoint)<br>
-  cleantrain: True		#(True or False. If True, train a net from scratch)<br>
-  advtrain: False               #(True or False. If True, adversarial train a net, need the ckpt model)<br>
-  advtest: False		#(True or False. If True, adversarial test the ckpt model)<br>
+DEFAULT:
+
+  dataset: mnist 		#(you don't need to change)
+  
+  ckpt: 			#(os dirpath. path for model checkpoint)
+  
+  cleantrain: True		#(True or False. If True, train a net from scratch)
+  
+  advtrain: False               #(True or False. If True, adversarial train a net, need the ckpt model)
+  
+  advtest: False		#(True or False. If True, adversarial test the ckpt model)
 	
 Network:
+
   epochs: 201
+  
   model: ALIF			#(LIF or ALIF; ALIF is the TA-LIF mode in the paper)
+  
   tau_v: 1.5			#(a positive real number from 1 to inf as tauv in the paper)
+  
   ckpt_v: ./spikedata/mnist/mnist.pt #(os dirpath. path for the NDS, i have prepared a file for you)
+  
   batch_size: 64
+  
   lr: 0.0005
+  
   is_bn: False			#(True or False, whether to use BN layer)
+  
   save_target: False		#(True or False, whether to save your NDS)
+  
   n_steps: 5			#simulation time
+  
   data_path: ./datasets/mnist	
+  
   mean: 0.1307			#mean of the dataset
+  
   std: 0.3081			#std of the dataset
+  
   dataset: MNIST
+  
   loss: "kernel"		#loss, "kernel" for MNIST,CIFAR10 and "softmax" for CIFAR100, don't need to change
+  
   n_class: 10			
+  
   tau_m: 5			#membrane constant
+  
   tau_s: 3			#psc constant
 
 ATTACK:
+
   strength: [1/10, 2/10, 3/10, 4/10] #during adv testing,  the strength eps to use
+  
   ft_method: fgm		#during adv training,  the adv method to use
+  
   train: [1/10]			#during adv training,  the eps to use
 
 Layers:
+
   ...(omitted)
