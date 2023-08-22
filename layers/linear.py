@@ -1,5 +1,5 @@
 import math
-
+import torch.nn.init as init
 import torch
 import torch.nn as nn
 import torch.nn.functional as f
@@ -43,10 +43,10 @@ class LinearLayer(nn.Linear):
     
         #bn
         self.is_bn = network_config["is_bn"]
-        self.nobn = (self.is_bn == False) or ((network_config['model'] == "ALIF") and (self.name == "output"))
-        if(self.nobn == False):
+        if((self.is_bn == True) and (self.name!= "output")):
             self.bn = nn.BatchNorm1d(num_features=self.out_features)  # assuming self.out_features is the output feature number of your linear layer
 
+    
         #deal alif thing
         if((network_config['model'] == "ALIF") and (self.name!= "output")):
             print_rank0("alif layer, using target train as init" )
@@ -77,7 +77,7 @@ class LinearLayer(nn.Linear):
         y = f.linear(x, self.weight, self.bias)
         y = y.transpose(1, 2)
 
-        if(self.nobn == False):
+        if((self.is_bn == True) and (self.name!= "output")):
             y = self.bn(y)  # apply BatchNorm layer
 
         y = y.view(y.shape[0], y.shape[1], 1, 1, y.shape[2])
@@ -85,8 +85,15 @@ class LinearLayer(nn.Linear):
 
     def forward_pass(self, x):
         y = self.forward(x)
-        y, out_spike= tsslbp.TSSLBP.apply(y, self.network_config, self.layer_config, self.name, self.target_train, self.theta_v)
-        return y, out_spike
+
+        if(self.name == "output"):
+            if(self.network_config["save_target"]== True):
+                return y,torch.mean(y, dim=0)
+            else:
+                return y, None
+        else:
+            y, out_spike= tsslbp.TSSLBP.apply(y, self.network_config, self.layer_config, self.name, self.target_train, self.theta_v)
+            return y, out_spike
 
     def get_parameters(self):
         return self.weight

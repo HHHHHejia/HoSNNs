@@ -8,6 +8,8 @@ from tools.attack import fast_gradient_method, projected_gradient_descent, bim_a
 import torch.distributed as dist
 import wandb
 from tqdm import tqdm
+from torch.utils.data import TensorDataset, DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
 def print_rank0(*args, **kwargs):
@@ -37,26 +39,13 @@ def init_distributed_mode():
     torch.distributed.init_process_group(backend='nccl', init_method='env://')
     assert torch.distributed.is_initialized()
 
-def set_target_signal(n_steps, network_config):
-    # set target signal
-    if n_steps >= 10:
-        desired_spikes = torch.tensor([0, 1, 0, 1, 0, 1, 0, 1, 0, 1]).repeat(int(n_steps/10))
-    else:
-        desired_spikes = torch.tensor([0, 1, 1, 1, 1]).repeat(int(n_steps/5))
-    
-    desired_spikes = desired_spikes.view(1, 1, 1, 1, n_steps).to(device)
-    desired_spikes = loss_f.psp(desired_spikes, network_config).view(1, 1, 1, n_steps)
-    
-    return desired_spikes
 
-def calculate_loss(outputs, labels, network_config, layers_config, err, desired_spikes):
+
+def calculate_loss(outputs, labels, network_config, layers_config, err):
     loss_function = network_config['loss']
-    
-    if loss_function == "kernel":
-        targets = torch.zeros(outputs.shape).to(device)
-        for i in range(len(labels)):
-            targets[i, labels[i], ...] = desired_spikes
-        return err.spike_kernel(outputs, targets, network_config)
+
+    if loss_function == "softmax":
+        return err.spike_soft_max(outputs, labels)
     else:
         raise Exception('Unrecognized loss function.')
 
@@ -79,7 +68,6 @@ def save_target(avg_mem_trains_acc, dataloader, mode, method, act_eps):
     if dist.get_rank() == 0:
         # Save the dictionary of average spike trains to a file
         name =  "./spikedata/tmp/" +"avg_mem_" + mode + "_" + method + "_"  + str(act_eps)[:4] +'.pt'
-        #print(avg_mem_trains_acc)
         torch.save(avg_mem_trains_acc, name)
         print_rank0("Saved target to ", name)
 
@@ -92,19 +80,11 @@ def train(network, trainloader, opti, epoch, network_config, layers_config, err,
     correct = 0
     total = 0
     n_steps = network_config['n_steps']
-    n_class = network_config['n_class']
-
-
-    if network_config['loss'] == "kernel":
-        desired_spikes = set_target_signal(n_steps, network_config)
-    else:
-        print_rank0("Should use kernel loss!")
-        return
 
     avg_mem_trains_acc = {l.name: 0 for l in network.module.layers if l.type in ["conv", "linear"]}
+
     for _, (inputs, labels) in tqdm(enumerate(trainloader)):
 
-        # Initialize an empty dictionary to accumulate the average spike train for each layer
         if len(inputs.shape) < 5:
             inputs = inputs.unsqueeze_(-1).repeat(1, 1, 1, 1, n_steps)
         # forward pass
@@ -112,32 +92,24 @@ def train(network, trainloader, opti, epoch, network_config, layers_config, err,
         inputs = inputs.to(device)
         inputs.type(torch.float32)
 
-        #set target
-        targets = torch.zeros(labels.shape[0], n_class, 1, 1, n_steps).to(device) 
-        if network_config['loss'] == "kernel":
-            targets.zero_()
-            for i, label in enumerate(labels):
-                targets[i, label, ...] = desired_spikes
-
         #gen adv target
         if method == "clean":
             pass
         elif method == "fgm":
-            inputs = fast_gradient_method(network, inputs, targets, act_eps, network_config)
-        else:
-            print_rank0("wrong adv training method")
-            return
+            inputs = fast_gradient_method(network, inputs, labels, act_eps, network_config)
+        elif method == "pgd":
+            inputs = projected_gradient_descent(network, inputs, labels, act_eps, network_config)
 
         # forward pass
         outputs, avg_mem_trains= network.forward(inputs, True)
 
-        #Accumulate the average spike train for each layer
+        #Accumulate the average spike train for each 
         if(avg_mem_trains!= {}):
             for l_name in avg_mem_trains_acc.keys():
                 avg_mem_trains_acc[l_name] += avg_mem_trains[l_name]
 
         #cal loss
-        loss = calculate_loss(outputs, labels, network_config, layers_config, err, desired_spikes)
+        loss = calculate_loss(outputs, labels, network_config, layers_config, err)
 
         #backward
         opti.zero_grad()
@@ -172,45 +144,33 @@ def test(network, testloader, epoch, network_config, method = None, act_eps = No
     correct = 0
     total = 0
     n_steps = network_config['n_steps']
-    n_class = network_config['n_class']
 
-    desired_spikes = set_target_signal(n_steps, network_config)
-    
     avg_mem_trains_acc = {l.name: 0 for l in network.module.layers if l.type in ["conv", "linear"]}
 
     for _, (inputs, labels) in tqdm(enumerate(testloader)):
     
         # Initialize an empty dictionary to accumulate the average spike train for each layer
-
         if len(inputs.shape) < 5:
             inputs = inputs.unsqueeze_(-1).repeat(1, 1, 1, 1, n_steps)
         # forward pass
         labels = labels.to(device)
         inputs = inputs.to(device)
 
-        #define target
-        targets = torch.zeros(labels.shape[0], n_class, 1, 1, n_steps).to(device)
-        targets.zero_()
-        for i in range(len(labels)):
-            targets[i, labels[i], ...] = desired_spikes
-
-
         #general adv sample
         if method == "clean": 
             adv_inputs = inputs                
         elif method =="fgm":
-            adv_inputs = fast_gradient_method(network, inputs, targets, act_eps, network_config)
+            adv_inputs = fast_gradient_method(network, inputs, labels, act_eps, network_config)
         elif method =="pgd":
-            adv_inputs = projected_gradient_descent(network, inputs, targets, act_eps, network_config)
+            adv_inputs = projected_gradient_descent(network, inputs, labels, act_eps, network_config)
         elif method =="rfgm":
-            adv_inputs = r_fgsm(network, inputs, targets, act_eps, act_eps/2 , network_config)
+            adv_inputs = r_fgsm(network, inputs, labels, act_eps, act_eps/2 , network_config)
         elif method =="bim":
-            adv_inputs = bim_attack(network, inputs, targets, act_eps, network_config)
+            adv_inputs = bim_attack(network, inputs, labels, act_eps, network_config)
         else:
             exit("wrong method")
         outputs , avg_mem_trains= network.forward(adv_inputs, False)
-
-
+        
         # Accumulate the average spike train for each layer
         if(avg_mem_trains!= {}):
             for l_name in avg_mem_trains_acc.keys():
@@ -246,11 +206,6 @@ def test(network, testloader, epoch, network_config, method = None, act_eps = No
 
     return acc, avg_mem_trains_acc
 
-def log_and_test_attack(net, test_loader, attack_type, ori_eps, act_eps, params, results):
-    acc = test(net, test_loader, 0, params['Network'], attack_type, act_eps)
-    results[attack_type].append(acc)
-    print_rank0(f"Acc test under {attack_type}, Ori_eps = {ori_eps}, Act_eps = {round(act_eps, 3)}, acc = {acc}")
-    return acc
 
 def advtest(net, test_loader, params, test_only=True, ckpt=None, blackbox=False):
     atk_strength = params['ATTACK']['strength']
@@ -261,7 +216,7 @@ def advtest(net, test_loader, params, test_only=True, ckpt=None, blackbox=False)
     if test_only:
         assert ckpt is not None, "Checkpoint path must be provided in test_only mode"
         checkpoint = torch.load(ckpt, map_location=device)
-        net.load_state_dict(checkpoint['net'], strict = False)
+        net.load_state_dict(checkpoint['net'])
         print_rank0(f"Adv Testing, using {ckpt}")
     else:
         assert ckpt is None, "Checkpoint path should not be provided if not in test_only mode"
@@ -269,7 +224,6 @@ def advtest(net, test_loader, params, test_only=True, ckpt=None, blackbox=False)
 
     # Clean test
     clean_acc, avg_mem_trains_acc = test(net, test_loader, 0, params['Network'], 'clean', 0)
-    print_rank0(f"Clean test,  acc = {clean_acc}")
     if(bool(params['Network']["save_target"])== True):
         save_target(avg_mem_trains_acc, test_loader, "test", "clean", 0)
 
@@ -286,10 +240,13 @@ def advtest(net, test_loader, params, test_only=True, ckpt=None, blackbox=False)
         count += 1
         for atk in attack_types:
             acc, avg_mem_trains_acc = test(net, test_loader, 0, params['Network'], atk, act_eps)
+
             results[atk].append(acc)
             print_rank0(f"Acc test under {atk}, Ori_eps = {ori_eps}, Act_eps = {round(act_eps, 3)}, acc = {acc}")
+
             metrics[f'{atk}_acc'] = acc
             wandb_log_rank0(metrics, step=count)  # Assuming step increases with act_eps
+
             if(bool(params['Network']["save_target"])== True):
                 save_target(avg_mem_trains_acc, test_loader, "test", atk, act_eps)
     # Print results
@@ -305,22 +262,24 @@ def advtrain(net, train_loader, test_loader, train_sampler,
     net_parameters = net.module.get_parameters()
     learning_rate = params['Network']['lr']
     epochs = params['Network']['epochs']
+    param_dict = {i: name for i, (name, _) in enumerate(net.named_parameters())}
 
     if mode != "clean":
         method = params['ATTACK']['ft_method']
         ori_eps = params['ATTACK']['train'][0]
         act_eps = eval(ori_eps)/params["Network"]["std"]
         print_rank0("Adv train under", method, "Ori_eps = ", ori_eps, "Act_eps = ", round(act_eps, 3))
-   
+        print_rank0("Finetune all") 
     else:
         method = "clean"
         act_eps = 0
-        print_rank0("Clean Train all!")
-    optimizer = torch.optim.AdamW(net_parameters,
-                                lr=learning_rate,
-                                betas=(0.9, 0.999)) 
 
-    lr_scheduler = CosineAnnealingLR(optimizer, T_max=200, verbose= True)
+        print_rank0("Clean Train all!")
+    optimizer = torch.optim.AdamW(net_parameters, 
+                                      lr=learning_rate,
+                                        betas=(0.9, 0.999))    
+    # 步骤2: 定义一个lr_scheduler
+    lr_scheduler = CosineAnnealingLR(optimizer, T_max=epochs, verbose= True)
 
     best_acc = 0
     for epoch in tqdm(range(epochs)):
@@ -336,11 +295,11 @@ def advtrain(net, train_loader, test_loader, train_sampler,
                         "clean", 0)
         print_rank0("Test Accuracy: %.3f"%(test_acc))
         metrics = {'train_acc':train_acc, 'train_loss':train_loss, 'test_acc':test_acc}
-        
+
         wandb_log_rank0(metrics)
         
         # save ckpt
-        ckpt =  params['DEFAULT']['dataset']+ params['Network']["model"] + mode + "_" + method + "_"
+        ckpt =  params['DEFAULT']['dataset']+ params['Network']["model"] +  mode + "_" + method + "_"+ str(params['Network']["tau_v"])
         if(test_acc > best_acc):
             best_acc = test_acc
             save_ckpt(net, epoch, ckpt)
@@ -350,7 +309,5 @@ def advtrain(net, train_loader, test_loader, train_sampler,
             save_ckpt(net, epoch, ckpt + str(epoch))
 
         dist.barrier()  # Ensure all processes have finished clean test
-    if mode != "clean":
-        advtest(net, test_loader, params, False)
-    else:
-        advtest(net, test_loader, params, True, './checkpoint/tmp/' + ckpt + 'best.pth')
+
+    advtest(net, test_loader, params, True, './checkpoint/tmp/' + ckpt + 'best.pth')

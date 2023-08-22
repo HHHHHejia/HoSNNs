@@ -5,6 +5,7 @@ import torch.nn.functional as f
 import functions.tsslbp as tsslbp
 from tools.helpfunc import print_rank0
 import tools.global_v as glv
+import torch.nn.init as init
 
 class ConvLayer(nn.Conv3d):
     def __init__(self, network_config, config, name, in_shape, groups=1):
@@ -86,10 +87,12 @@ class ConvLayer(nn.Conv3d):
             print_rank0("alif net, using target train as init" )
             self.theta_v = nn.Parameter(torch.full(self.out_shape, 1.0/network_config['tau_v'], dtype=torch.float32), requires_grad=True)
             if(network_config['ckpt_v']):
+                print_rank0("load ckpt_v", network_config['ckpt_v'] )
                 target_train = torch.load(network_config['ckpt_v'], map_location = glv.device)
-                self.target_train = nn.Parameter(target_train[self.name], requires_grad=True)
+                self.target_train = nn.Parameter(target_train[self.name], requires_grad=False)
             else:
-                self.target_train = nn.Parameter(torch.rand(*self.out_shape, network_config['n_steps'], dtype=torch.float32), requires_grad=True)
+                print_rank0("random ckpt_v" )
+                self.target_train = nn.Parameter(torch.rand(*self.out_shape, network_config['n_steps'], dtype=torch.float32), requires_grad=False)
         else:
             print_rank0("lif net, no theta_v or target train" )
             self.theta_v = None

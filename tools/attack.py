@@ -1,35 +1,27 @@
 import torch
 import torch.nn as nn
-from functions.loss_f import psp
+import torch.nn.functional as f
 
 
 criterion = nn.CrossEntropyLoss()
-#for mnist, we remove the clamp to dilever stronger adversarial attack
-is_clamp = False
-#for cifar10 and cifar100, would not be significantly different
-
 def normalize_parameters(mean, std):
     zero_normed = -mean/std 
     max_normed = (1-mean)/std 
-    if is_clamp:
-        return zero_normed, max_normed
-    else:
-        return -float("inf"), float("inf")
-
+    return zero_normed, max_normed
 
 # Fast Gradient Method (FGM) 
-def fast_gradient_method(model_fn, images, targets, eps = None, network_config=None):
+def fast_gradient_method(model_fn, images, labels, eps = None, network_config=None):
 
     mean = network_config["mean"]
     std = network_config["std"]
     zero_normed, max_normed = normalize_parameters(mean, std)
     images = images.clone().detach().requires_grad_(True)
-    targets = targets.clone().detach()
+    labels = labels.clone().detach()
 
     # cal snn loss
-    targets = psp(targets, network_config).detach()
     outputs, _ = model_fn(images,False)
-    loss = criterion(outputs, targets)
+    outputs = f.log_softmax(outputs.mean(dim=4).squeeze(-1).squeeze(-1), dim = 1)
+    loss = criterion(outputs, labels)
 
     # update image
     grad = torch.autograd.grad(loss, images, retain_graph=False, create_graph=False)[0]
@@ -39,7 +31,7 @@ def fast_gradient_method(model_fn, images, targets, eps = None, network_config=N
 
 
 # Projected Gradient Descent (PGD) 
-def projected_gradient_descent(model_fn, images, targets, eps = None, network_config=None, alpha= None, steps= 7):
+def projected_gradient_descent(model_fn, images, labels, eps = None, network_config=None, alpha= None, steps= 7):
     mean = network_config["mean"]
     std = network_config["std"]
     zero_normed, max_normed = normalize_parameters(mean, std)
@@ -52,7 +44,7 @@ def projected_gradient_descent(model_fn, images, targets, eps = None, network_co
     for _ in range(steps):
         adv_images.requires_grad = True
         # call FGM
-        adv_images = fast_gradient_method(model_fn, adv_images, targets, alpha, network_config)
+        adv_images = fast_gradient_method(model_fn, adv_images, labels, alpha, network_config)
         # Clip to ensure within eps
         delta = torch.clamp(adv_images - images, min=-eps, max=eps)
         adv_images = torch.clamp((images + delta), zero_normed, max_normed).detach()
@@ -67,7 +59,7 @@ def gaussian_noise_attack(images, eps, network_config):
     return adv_images
 
 #rfgsm
-def r_fgsm(model_fn, images, targets, eps, alpha, network_config=None):
+def r_fgsm(model_fn, images, labels, eps, alpha, network_config=None):
     mean = network_config["mean"]
     std = network_config["std"]
     zero_normed, max_normed = normalize_parameters(mean, std)
@@ -78,10 +70,8 @@ def r_fgsm(model_fn, images, targets, eps, alpha, network_config=None):
     
     # Get the model's prediction
     outputs, _ = model_fn(images_new, False)
-    
-    # Calculate the loss
-    targets = psp(targets, network_config).detach()  # Apply the PSP function as seen in your previous code
-    loss = criterion(outputs, targets)
+    outputs = f.log_softmax(outputs.mean(dim=4).squeeze(-1).squeeze(-1), dim = 1)
+    loss = criterion(outputs, labels)
     loss.backward()
     
     # Apply the FGSM perturbation
@@ -92,7 +82,7 @@ def r_fgsm(model_fn, images, targets, eps, alpha, network_config=None):
 #bim attack
 
 # Basic Iterative Method (BIM) Attack
-def bim_attack(model_fn, images, targets, eps=None, network_config=None, steps=7):
+def bim_attack(model_fn, images, labels, eps=None, network_config=None, steps=7):
     # Compute alpha based on the relation alpha * steps = eps
     mean = network_config["mean"]
     std = network_config["std"]
@@ -106,7 +96,7 @@ def bim_attack(model_fn, images, targets, eps=None, network_config=None, steps=7
         adv_images.requires_grad = True
         
         # Step 1: Apply the FGM with the computed alpha
-        adv_images = fast_gradient_method(model_fn, adv_images, targets, alpha, network_config)
+        adv_images = fast_gradient_method(model_fn, adv_images, labels, alpha, network_config)
         
         # Step 2: Project the perturbed image to ensure it's within the epsilon boundary
         delta = torch.clamp(adv_images - images, min=-eps, max=eps)

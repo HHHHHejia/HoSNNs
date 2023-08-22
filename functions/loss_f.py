@@ -27,19 +27,9 @@ class SpikeLoss(torch.nn.Module):
         self.network_config = network_config
         self.criterion = torch.nn.CrossEntropyLoss()
 
-    def spike_kernel(self, outputs, target, network_config):
-        delta = loss_kernel.apply(outputs, target, network_config)
-        return 1 / 2 * torch.sum(delta ** 2)
+    def spike_soft_max(self, outputs, target):
+        delta = f.log_softmax(outputs.mean(dim=4).squeeze(-1).squeeze(-1), dim = 1)
+        return self.criterion(delta, target)
 
-class loss_kernel(torch.autograd.Function):  # a and u is the incremnet of each time steps
-    @staticmethod
-    def forward(ctx, outputs, target, network_config):
-        # out_psp = psp(outputs, network_config)
-        target_psp = psp(target, network_config)
-        delta = outputs - target_psp
-        return delta
 
-    @staticmethod
-    def backward(ctx, grad):
-        return grad, None, None
 
