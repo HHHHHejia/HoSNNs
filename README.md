@@ -26,14 +26,14 @@ For CIFAR100, -d should be 0: CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c
 
 ------------------------------------------------------
 
-3.All the running options are placed in the yaml file in the networks folder, and I will choose an example below. Eg for MNIST:
+3.All the running options are placed in the yaml file in the networks folder, and I will choose an example below. Eg for MNIST:<br>
 
-DEFAULT:
-  dataset: mnist 		#(you don't need to change)
-  ckpt: 			#(os dirpath. path for model checkpoint)
-  cleantrain: True		#(True or False. If True, train a net from scratch)
-  advtrain: False               #(True or False. If True, adversarial train a net, need the ckpt model)
-  advtest: False		#(True or False. If True, adversarial test the ckpt model)
+DEFAULT:<br>
+  dataset: mnist 		#(you don't need to change)<br>
+  ckpt: 			#(os dirpath. path for model checkpoint)<br>
+  cleantrain: True		#(True or False. If True, train a net from scratch)<br>
+  advtrain: False               #(True or False. If True, adversarial train a net, need the ckpt model)<br>
+  advtest: False		#(True or False. If True, adversarial test the ckpt model)<br>
 	
 Network:
   epochs: 201
