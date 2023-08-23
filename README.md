@@ -2,7 +2,7 @@
 This is code for http://arxiv.org/abs/2308.10373, HoSNN: Adversarially-Robust Homeostatic Spiking Neural Networks with
 Adaptive Firing Thresholds
 
-We uploaded two branches of codes, namely HoSNN(mnist, cifar10) and HoSNN-cifar100(for CIFAR100). They are almost exactly the same, the only difference is that cifar100 directly uses the classification result of the last layer and uses softmax to calculate the loss ( For better learning effect), mnist and cifar10 use the last layer of lif neurons to output psc and the kernel loss of the target psc to calculate the loss. To avoid bugs from merging code, I uploaded both of them. For both code, what you need to do is almost the same.
+We uploaded two branches of codes, namely HoSNN(mnist, cifar10) and HoSNN-cifar100(for CIFAR100). They are almost exactly the same, the only difference is that cifar100 directly uses the classification result of the last layer and uses softmax to calculate the loss ( For better learning effect), mnist and cifar10 use the last layer of lif neurons to output psc and the kernel loss of the target psc to calculate the loss. For both code, what you need to do is almost the same.
 
 Besides, For attack on MNIST, we remove the clamp to [0,1] to deliver stronger attack, in attack.py
 For cifar10 and cifar100, won't make a difference.
@@ -34,9 +34,6 @@ CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:
 
 For CIFAR100, -d should be 2: 
 CUDA_VISIBLE_DEVICES=0,1 torchrun --rdzv-backend=c10d --rdzv-endpoint=localhost:29506  --nproc_per_node=2 main.py -d 2
-
-------------------------------------------------------
-
 
 ------------------------------------------------------
 
